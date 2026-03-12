@@ -1,0 +1,335 @@
+import { useState, useRef, useEffect, useCallback } from 'react'
+
+const ANIME_LIST = [
+  'Spirited Away','Solo Leveling','JoJo\'s Bizarre Adventure','Akame ga Kill',
+  'Hell\'s Paradise','Demon Slayer','Frieren','Jujutsu Kaisen','Blue Lock',
+  'Blue Box','One Punch Man','My Hero Academia','Hunter x Hunter','Spy x Family',
+  'Tokyo Ghoul','Kaiju No. 8','Sakamoto Days','Apothecary Diaries',
+  'Classroom of the Elite','Black Clover','Tougen Anki','Daily Life of Immortal King',
+  'Attack on Titan','Fullmetal Alchemist','Vinland Saga','Chainsaw Man',
+  'Re:Zero','Overlord','That Time I Got Reincarnated as a Slime','Naruto',
+  'Bleach','One Piece','Dragon Ball Z','Death Note','Steins;Gate',
+  'No Game No Life','Berserk','Mushoku Tensei','Code Geass','Haikyuu'
+]
+
+const SUGGESTIONS = [
+  'Who is the strongest in JJK? ⚡',
+  'Best arc in Demon Slayer? 🔥',
+  'Explain Nen from HxH 💜',
+  'Frieren vs Solo Leveling?',
+  'Top 5 anime of all time? 👑',
+  'Is Blue Lock worth watching? ⚽',
+  'Gojo vs Sung Jin-Woo? 🌀',
+  'Most emotional anime deaths? 💀',
+]
+
+const SYSTEM_PROMPT = `You are AKIRA — an elite, deeply passionate anime expert chatbot with encyclopedic knowledge of anime. You have expert-level knowledge of all these series and many more:
+
+Spirited Away, Solo Leveling, JoJo's Bizarre Adventure, Akame ga Kill, Hell's Paradise, Demon Slayer, Frieren: Beyond Journey's End, Jujutsu Kaisen, Blue Lock, Blue Box, One Punch Man, My Hero Academia, Hunter x Hunter, Spy x Family, Tokyo Ghoul, Kaiju No. 8, Sakamoto Days, Apothecary Diaries, Classroom of the Elite, Black Clover, Tougen Anki, The Daily Life of the Immortal King, Attack on Titan, Fullmetal Alchemist Brotherhood, Vinland Saga, Chainsaw Man, Re:Zero, Overlord, That Time I Got Reincarnated as a Slime, Naruto, Bleach, One Piece, Dragon Ball Z, Death Note, Code Geass, Steins;Gate, No Game No Life, Berserk, Mushoku Tensei, Haikyuu, and many more.
+
+Your personality traits:
+- Deeply passionate and enthusiastic — you LOVE anime
+- Use anime terminology naturally (Nakama, Senpai, power scaling, etc.)
+- Reference characters, arcs, power systems, and lore with precision
+- Use expressive language: "This arc SLAPS", "Absolute cinema", "Peak fiction"
+- Occasionally use relevant emojis for flair ⚡🔥✨⚔️👁️💜
+- Give opinions when asked, but acknowledge different fan perspectives
+- Compare anime naturally when relevant
+- For power scaling debates, present multiple perspectives
+- Keep responses engaging and conversational — not textbook-dry
+- If asked about something unrelated to anime, humorously redirect back
+
+Always be accurate, helpful, and fun. You are the ultimate anime companion.`
+
+const KatakanaRain = () => {
+  const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'
+  const columns = 18
+  return (
+    <div style={{ position:'fixed', inset:0, overflow:'hidden', opacity:0.05, pointerEvents:'none', zIndex:0 }}>
+      {Array.from({ length: columns }).map((_, i) => (
+        <div key={i} style={{
+          position:'absolute', left:`${(i/columns)*100}%`, top:-80,
+          color:'#4cc9f0', fontSize:13, fontFamily:'monospace',
+          animation:`kfall ${3.5 + (i%5)*0.7}s linear infinite`,
+          animationDelay:`${(i*0.35)%4}s`,
+          writingMode:'vertical-rl', letterSpacing:'5px',
+          textShadow:'0 0 8px currentColor',
+        }}>
+          {Array.from({ length:10 }).map((_,j) => chars[(i*7+j*13)%chars.length]).join('')}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const TypingIndicator = () => (
+  <div style={{ display:'flex', gap:10, alignItems:'flex-start', padding:'0 4px' }}>
+    <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg,#4cc9f0,#4361ee)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, boxShadow:'0 0 12px #4cc9f044' }}>⚡</div>
+    <div style={{ background:'linear-gradient(135deg,#4cc9f00d,#4361ee0d)', border:'1px solid #4cc9f020', borderRadius:'4px 18px 18px 18px', padding:'14px 18px', display:'flex', gap:5, alignItems:'center' }}>
+      {[0,200,400].map(delay => (
+        <div key={delay} style={{ width:7, height:7, borderRadius:'50%', background:'linear-gradient(135deg,#4cc9f0,#4361ee)', animation:`tdot 1.2s ease-in-out ${delay}ms infinite` }} />
+      ))}
+    </div>
+  </div>
+)
+
+const renderMarkdown = (text) =>
+  text
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#e0e8ff">$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em style="color:#b0b8d8">$1</em>')
+    .replace(/`(.*?)`/g, '<code style="background:#ffffff12;padding:1px 6px;border-radius:4px;font-family:monospace;font-size:0.92em">$1</code>')
+    .replace(/\n\n/g, '</p><p style="margin-top:10px">')
+    .replace(/\n/g, '<br/>')
+
+export default function Chatbot({ apiKey, onLogout }) {
+  const [messages, setMessages] = useState([{
+    role:'assistant',
+    content:'Yo! I\'m **AKIRA** — your ultimate anime expert ⚡\n\nI have deep knowledge of Demon Slayer, JJK, Solo Leveling, Frieren, HxH, JoJo\'s, and 35+ more series. Ask me about characters, power systems, best arcs, hidden lore, or just vibe about your favourite anime!\n\nWhat\'s on your mind, fellow otaku? 🔥',
+    id: Date.now(),
+  }])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [showAnimeList, setShowAnimeList] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(true)
+  const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
+  const chatContainerRef = useRef(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior:'smooth' })
+  }, [messages, loading])
+
+  const sendMessage = useCallback(async (text) => {
+    const userText = (text || input).trim()
+    if (!userText || loading) return
+    setInput('')
+    setShowSuggestions(false)
+
+    const userMsg = { role:'user', content:userText, id:Date.now() }
+    const newMessages = [...messages, userMsg]
+    setMessages(newMessages)
+    setLoading(true)
+
+    try {
+      const apiMessages = newMessages.map(m => ({ role:m.role, content:m.content }))
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true',
+        },
+        body: JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          system: SYSTEM_PROMPT,
+          messages: apiMessages,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error?.message || 'API error')
+      }
+
+      const reply = data.content?.map(b => b.text || '').join('') || 'Something went wrong! Even Gojo couldn\'t predict this error 😅'
+      setMessages(prev => [...prev, { role:'assistant', content:reply, id:Date.now() }])
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role:'assistant',
+        content:`Connection error! ⚡ ${err.message || 'Please try again.'}`,
+        id: Date.now(),
+      }])
+    } finally {
+      setLoading(false)
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [messages, input, loading, apiKey])
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  }
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value)
+    e.target.style.height = 'auto'
+    e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'
+  }
+
+  return (
+    <div style={{
+      minHeight:'100vh', background:'#0a0a0f',
+      display:'flex', flexDirection:'column', alignItems:'center',
+      padding:'16px', position:'relative', overflow:'hidden',
+    }}>
+      <style>{`
+        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+        @keyframes kfall { 0%{transform:translateY(-80px);opacity:1} 100%{transform:translateY(700px);opacity:0} }
+        @keyframes pulse-glow { 0%,100%{box-shadow:0 0 16px #4cc9f055} 50%{box-shadow:0 0 32px #4cc9f099,0 0 60px #7209b733} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes tdot { 0%,80%,100%{transform:scale(0.55);opacity:0.4} 40%{transform:scale(1.05);opacity:1} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .msg-in { animation: slideUp 0.28s ease forwards; }
+        .suggestion-pill:hover { background:linear-gradient(135deg,#4cc9f018,#7209b718) !important; border-color:#4cc9f066 !important; transform:translateY(-1px); color:#ccd8ff !important; }
+        .send-btn:hover:not(:disabled) { transform:scale(1.06); box-shadow:0 0 24px #f7258566 !important; }
+        .send-btn:active:not(:disabled) { transform:scale(0.96); }
+        .send-btn:disabled { opacity:0.35; cursor:not-allowed; }
+        .chat-input:focus { outline:none; border-color:#4cc9f066 !important; box-shadow:0 0 0 2px #4cc9f022 !important; }
+        .anime-tag:hover { background:#4cc9f022 !important; border-color:#4cc9f0 !important; color:#a8d8ff !important; cursor:pointer; }
+        .header-btn:hover { background:#ffffff0f !important; border-color:#ffffff22 !important; }
+        textarea { resize:none; }
+      `}</style>
+
+      <KatakanaRain />
+      <div style={{ position:'fixed', top:'8%', left:'3%', width:350, height:350, borderRadius:'50%', background:'radial-gradient(circle,#7209b714,transparent)', pointerEvents:'none', zIndex:0 }} />
+      <div style={{ position:'fixed', bottom:'8%', right:'3%', width:280, height:280, borderRadius:'50%', background:'radial-gradient(circle,#4cc9f010,transparent)', pointerEvents:'none', zIndex:0 }} />
+
+      {/* ── Header ── */}
+      <header style={{ width:'100%', maxWidth:740, marginBottom:14, display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative', zIndex:1 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:42, height:42, borderRadius:'50%', background:'linear-gradient(135deg,#4cc9f0,#4361ee,#7209b7)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, animation:'pulse-glow 3s ease-in-out infinite', flexShrink:0 }}>⚡</div>
+          <div>
+            <h1 style={{ fontFamily:"'Cinzel',serif", fontSize:'clamp(20px,4vw,30px)', fontWeight:900, margin:0, background:'linear-gradient(90deg,#4cc9f0,#f72585,#4cc9f0)', backgroundSize:'200%', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', animation:'shimmer 4s linear infinite', lineHeight:1.1 }}>AKIRA</h1>
+            <p style={{ color:'#4cc9f066', fontSize:10, letterSpacing:'3px', textTransform:'uppercase', margin:0 }}>Anime AI Expert</p>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button
+            onClick={() => setShowAnimeList(!showAnimeList)}
+            className="header-btn"
+            style={{ background:'#ffffff08', border:'1px solid #ffffff10', color:'#8890aa', padding:'6px 12px', borderRadius:20, fontSize:11, cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", letterSpacing:'1px', transition:'all 0.2s', whiteSpace:'nowrap' }}
+          >
+            📚 {showAnimeList ? 'Hide' : 'Library'}
+          </button>
+          <button
+            onClick={onLogout}
+            className="header-btn"
+            style={{ background:'#ffffff08', border:'1px solid #ffffff10', color:'#8890aa', padding:'6px 12px', borderRadius:20, fontSize:11, cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", letterSpacing:'1px', transition:'all 0.2s' }}
+            title="Change API Key"
+          >
+            🔑 Key
+          </button>
+        </div>
+      </header>
+
+      {/* ── Anime Library Dropdown ── */}
+      {showAnimeList && (
+        <div style={{ width:'100%', maxWidth:740, marginBottom:12, background:'#0f0f1a', border:'1px solid #4361ee22', borderRadius:16, padding:'14px 16px', position:'relative', zIndex:2, animation:'fadeIn 0.2s ease' }}>
+          <p style={{ color:'#ffffff44', fontSize:10, letterSpacing:'2px', textTransform:'uppercase', marginBottom:10 }}>Click any anime to ask about it</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+            {ANIME_LIST.map(a => (
+              <button key={a} className="anime-tag"
+                onClick={() => { sendMessage(`Tell me about ${a}`); setShowAnimeList(false) }}
+                style={{ background:'#4361ee10', border:'1px solid #4361ee33', color:'#8898cc', padding:'3px 11px', borderRadius:20, fontSize:11, cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", transition:'all 0.15s', fontWeight:500 }}
+              >{a}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat Window ── */}
+      <div ref={chatContainerRef} style={{
+        width:'100%', maxWidth:740,
+        background:'linear-gradient(180deg,#0d0d18 0%,#0a0a12 100%)',
+        border:'1px solid #ffffff08', borderRadius:20,
+        display:'flex', flexDirection:'column',
+        boxShadow:'0 0 80px #4cc9f006, 0 24px 80px #00000070',
+        position:'relative', zIndex:1,
+        height:'calc(100vh - 220px)',
+        minHeight:360,
+      }}>
+        {/* Top bar */}
+        <div style={{ padding:'10px 18px', borderBottom:'1px solid #ffffff07', display:'flex', alignItems:'center', gap:8, background:'#0d0d1a', borderRadius:'20px 20px 0 0', flexShrink:0 }}>
+          <div style={{ width:7, height:7, borderRadius:'50%', background:'#4cc9f0', boxShadow:'0 0 8px #4cc9f0' }} />
+          <div style={{ width:7, height:7, borderRadius:'50%', background:'#f72585', boxShadow:'0 0 8px #f72585' }} />
+          <div style={{ width:7, height:7, borderRadius:'50%', background:'#7209b7', boxShadow:'0 0 8px #7209b7' }} />
+          <span style={{ color:'#ffffff33', fontSize:10, fontFamily:"'Rajdhani',sans-serif", letterSpacing:'2px', marginLeft:6 }}>AKIRA ONLINE • {messages.length - 1} MESSAGES</span>
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex:1, overflowY:'auto', padding:'16px 14px', display:'flex', flexDirection:'column', gap:14, scrollBehavior:'smooth' }}>
+          {messages.map(msg => (
+            <div key={msg.id} className="msg-in" style={{ display:'flex', gap:10, flexDirection:msg.role==='user'?'row-reverse':'row', alignItems:'flex-end' }}>
+              <div style={{
+                width:34, height:34, borderRadius:'50%', flexShrink:0,
+                background: msg.role==='user' ? 'linear-gradient(135deg,#f72585,#7209b7)' : 'linear-gradient(135deg,#4cc9f0,#4361ee)',
+                display:'flex', alignItems:'center', justifyContent:'center', fontSize:15,
+                boxShadow: msg.role==='user' ? '0 0 10px #f7258544' : '0 0 10px #4cc9f044',
+              }}>
+                {msg.role==='user' ? '👤' : '⚡'}
+              </div>
+              <div style={{
+                maxWidth:'78%',
+                background: msg.role==='user'
+                  ? 'linear-gradient(135deg,#f7258512,#7209b712)'
+                  : 'linear-gradient(135deg,#4cc9f00d,#4361ee0d)',
+                border: msg.role==='user' ? '1px solid #f7258528' : '1px solid #4cc9f020',
+                borderRadius: msg.role==='user' ? '18px 4px 18px 18px' : '4px 18px 18px 18px',
+                padding:'11px 15px',
+                color:'#d8dff2', fontSize:14, lineHeight:1.7,
+                fontFamily:"'Rajdhani',sans-serif", fontWeight:400,
+              }}>
+                <p style={{ margin:0 }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+              </div>
+            </div>
+          ))}
+
+          {loading && <div className="msg-in"><TypingIndicator /></div>}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* ── Suggestions ── */}
+      {showSuggestions && messages.length <= 1 && (
+        <div style={{ width:'100%', maxWidth:740, marginTop:10, display:'flex', gap:6, flexWrap:'wrap', justifyContent:'center', position:'relative', zIndex:1 }}>
+          {SUGGESTIONS.map((s,i) => (
+            <button key={i} className="suggestion-pill"
+              onClick={() => sendMessage(s.replace(/[⚡🔥💜👑⚽🌀💀]/g,'').trim())}
+              style={{ background:'#111220', border:'1px solid #4361ee2a', color:'#7788aa', padding:'5px 13px', borderRadius:20, fontSize:11, cursor:'pointer', fontFamily:"'Rajdhani',sans-serif", letterSpacing:'0.5px', transition:'all 0.2s', fontWeight:500 }}
+            >{s}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Input Bar ── */}
+      <div style={{ width:'100%', maxWidth:740, marginTop:10, position:'relative', zIndex:1 }}>
+        <div style={{ display:'flex', gap:8, background:'#0f0f1c', border:'1px solid #4361ee2a', borderRadius:16, padding:'8px 8px 8px 14px', alignItems:'flex-end' }}>
+          <textarea
+            ref={inputRef}
+            className="chat-input"
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleKey}
+            placeholder="Ask about any anime — characters, power systems, arcs, rankings..."
+            rows={1}
+            style={{
+              flex:1, background:'transparent', border:'1px solid transparent',
+              color:'#e0e8ff', fontSize:14, fontFamily:"'Rajdhani',sans-serif",
+              fontWeight:500, padding:'7px 4px', minHeight:38, maxHeight:130,
+              transition:'border-color 0.2s, box-shadow 0.2s', borderRadius:8,
+              lineHeight:1.5,
+            }}
+          />
+          <button
+            className="send-btn"
+            onClick={() => sendMessage()}
+            disabled={!input.trim() || loading}
+            style={{
+              width:40, height:40, borderRadius:11, border:'none',
+              background: input.trim() && !loading ? 'linear-gradient(135deg,#f72585,#7209b7)' : '#1a1a28',
+              color:'#fff', fontSize:17, display:'flex', alignItems:'center', justifyContent:'center',
+              flexShrink:0, transition:'all 0.2s',
+              boxShadow: input.trim() ? '0 0 14px #f7258533' : 'none',
+            }}
+            title="Send message (Enter)"
+          >➤</button>
+        </div>
+        <p style={{ textAlign:'center', color:'#ffffff14', fontSize:10, marginTop:5, fontFamily:"'Rajdhani',sans-serif", letterSpacing:'1px' }}>
+          ENTER TO SEND • SHIFT+ENTER FOR NEW LINE • POWERED BY CLAUDE
+        </p>
+      </div>
+    </div>
+  )
+}

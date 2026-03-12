@@ -1,0 +1,225 @@
+import { useState } from 'react'
+
+export default function ApiKeySetup({ onKeySubmit }) {
+  const [key, setKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [error, setError] = useState('')
+  const [testing, setTesting] = useState(false)
+
+  const handleSubmit = async () => {
+    const trimmed = key.trim()
+    if (!trimmed) {
+      setError('Please enter your API key.')
+      return
+    }
+    if (!trimmed.startsWith('sk-ant-')) {
+      setError('Invalid key format. Anthropic keys start with "sk-ant-"')
+      return
+    }
+
+    setTesting(true)
+    setError('')
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': trimmed,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      })
+
+      if (res.ok) {
+        sessionStorage.setItem('akira_api_key', trimmed)
+        onKeySubmit(trimmed)
+      } else {
+        const data = await res.json()
+        setError(data?.error?.message || 'Invalid API key. Please check and try again.')
+      }
+    } catch {
+      setError('Connection error. Check your internet and try again.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#0a0a0f',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px 16px',
+      position: 'relative',
+      overflow: 'hidden',
+      fontFamily: "'Rajdhani', sans-serif",
+    }}>
+      <style>{`
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+        @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 #4cc9f044} 70%{box-shadow:0 0 0 20px transparent} 100%{box-shadow:0 0 0 0 transparent} }
+        @keyframes spin-slow { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        .setup-card { animation: fadeIn 0.6s ease forwards; }
+        .logo-icon { animation: float 3s ease-in-out infinite; }
+        .step-item:hover .step-num { background: #4cc9f022 !important; border-color: #4cc9f0 !important; }
+        .api-input:focus { outline: none; border-color: #4cc9f0 !important; box-shadow: 0 0 0 3px #4cc9f022 !important; }
+        .submit-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 30px #f7258544 !important; }
+        .submit-btn:active:not(:disabled) { transform: translateY(0); }
+        .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .link-btn:hover { color: #4cc9f0 !important; text-decoration: underline; }
+        .toggle-btn:hover { color: #4cc9f0 !important; }
+      `}</style>
+
+      {/* Background orbs */}
+      <div style={{ position:'fixed', top:'5%', left:'5%', width:400, height:400, borderRadius:'50%', background:'radial-gradient(circle, #7209b718, transparent)', pointerEvents:'none', zIndex:0 }} />
+      <div style={{ position:'fixed', bottom:'10%', right:'5%', width:300, height:300, borderRadius:'50%', background:'radial-gradient(circle, #4cc9f012, transparent)', pointerEvents:'none', zIndex:0 }} />
+      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:600, height:600, borderRadius:'50%', background:'radial-gradient(circle, #4361ee08, transparent)', pointerEvents:'none', zIndex:0 }} />
+
+      <div className="setup-card" style={{
+        width: '100%', maxWidth: 480,
+        background: 'linear-gradient(145deg, #0f0f1a, #0a0a12)',
+        border: '1px solid #ffffff0d',
+        borderRadius: 24,
+        padding: '40px 36px',
+        position: 'relative',
+        zIndex: 1,
+        boxShadow: '0 0 80px #4cc9f008, 0 32px 80px #00000060',
+      }}>
+
+        {/* Decorative corner lines */}
+        <div style={{ position:'absolute', top:0, left:0, width:60, height:60, borderTop:'2px solid #4cc9f033', borderLeft:'2px solid #4cc9f033', borderRadius:'24px 0 0 0', pointerEvents:'none' }} />
+        <div style={{ position:'absolute', bottom:0, right:0, width:60, height:60, borderBottom:'2px solid #f7258522', borderRight:'2px solid #f7258522', borderRadius:'0 0 24px 0', pointerEvents:'none' }} />
+
+        {/* Logo */}
+        <div style={{ textAlign:'center', marginBottom:32 }}>
+          <div className="logo-icon" style={{ fontSize:52, marginBottom:12, display:'inline-block', filter:'drop-shadow(0 0 20px #4cc9f066)' }}>⚡</div>
+          <h1 style={{
+            fontFamily: "'Cinzel', serif",
+            fontSize: 36, fontWeight: 900, margin: '0 0 6px',
+            background: 'linear-gradient(90deg, #4cc9f0, #f72585, #4cc9f0)',
+            backgroundSize: '200%',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            animation: 'shimmer 4s linear infinite',
+          }}>AKIRA</h1>
+          <p style={{ color:'#4cc9f077', fontSize:11, letterSpacing:'4px', textTransform:'uppercase' }}>Anime Intelligence System</p>
+        </div>
+
+        {/* Description */}
+        <div style={{ background:'#ffffff05', border:'1px solid #ffffff08', borderRadius:12, padding:'14px 16px', marginBottom:28, textAlign:'center' }}>
+          <p style={{ color:'#a0a8cc', fontSize:14, lineHeight:1.6, fontWeight:400 }}>
+            AKIRA uses the <strong style={{color:'#4cc9f0'}}>Anthropic Claude API</strong> to answer your anime questions. Enter your personal API key below — it stays in your browser only and is never stored.
+          </p>
+        </div>
+
+        {/* Steps */}
+        <div style={{ marginBottom:28 }}>
+          <p style={{ color:'#ffffff55', fontSize:11, letterSpacing:'2px', textTransform:'uppercase', marginBottom:12 }}>How to get your key</p>
+          {[
+            { num:'1', text: 'Visit', link: 'console.anthropic.com', url: 'https://console.anthropic.com' },
+            { num:'2', text: 'Sign up / Log in to your account', link: null },
+            { num:'3', text: 'Go to API Keys → Create Key', link: null },
+            { num:'4', text: 'Copy and paste it below', link: null },
+          ].map((step, i) => (
+            <div key={i} className="step-item" style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 0', cursor:'default', transition:'all 0.2s' }}>
+              <div className="step-num" style={{
+                width:26, height:26, borderRadius:'50%',
+                background:'#4361ee11', border:'1px solid #4361ee44',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:11, fontWeight:700, color:'#4cc9f0', flexShrink:0,
+                transition:'all 0.2s',
+              }}>{step.num}</div>
+              <span style={{ color:'#8890aa', fontSize:13 }}>
+                {step.text}{' '}
+                {step.link && (
+                  <a href={step.url} target="_blank" rel="noreferrer" className="link-btn"
+                    style={{ color:'#4cc9f099', textDecoration:'none', fontWeight:600, transition:'color 0.2s' }}>
+                    {step.link} ↗
+                  </a>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Input */}
+        <div style={{ marginBottom: error ? 12 : 20 }}>
+          <label style={{ display:'block', color:'#ffffff66', fontSize:11, letterSpacing:'2px', textTransform:'uppercase', marginBottom:8 }}>
+            Anthropic API Key
+          </label>
+          <div style={{ position:'relative' }}>
+            <input
+              className="api-input"
+              type={showKey ? 'text' : 'password'}
+              value={key}
+              onChange={e => { setKey(e.target.value); setError('') }}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              placeholder="sk-ant-api03-..."
+              style={{
+                width:'100%', padding:'13px 48px 13px 16px',
+                background:'#0d0d18', border:'1px solid #4361ee33',
+                borderRadius:12, color:'#e8e8f0',
+                fontSize:14, fontFamily:"'JetBrains Mono', monospace",
+                transition:'border-color 0.2s, box-shadow 0.2s',
+              }}
+            />
+            <button
+              className="toggle-btn"
+              onClick={() => setShowKey(!showKey)}
+              style={{ position:'absolute', right:14, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#ffffff44', fontSize:16, transition:'color 0.2s', padding:4 }}
+              title={showKey ? 'Hide key' : 'Show key'}
+            >
+              {showKey ? '🙈' : '👁'}
+            </button>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ background:'#f7258511', border:'1px solid #f7258533', borderRadius:10, padding:'10px 14px', marginBottom:16, display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:16 }}>⚠️</span>
+            <span style={{ color:'#f47', fontSize:13 }}>{error}</span>
+          </div>
+        )}
+
+        {/* Submit */}
+        <button
+          className="submit-btn"
+          onClick={handleSubmit}
+          disabled={testing || !key.trim()}
+          style={{
+            width:'100%', padding:'14px',
+            background: 'linear-gradient(135deg, #f72585, #7209b7)',
+            border:'none', borderRadius:12,
+            color:'#fff', fontSize:15, fontWeight:700,
+            fontFamily:"'Rajdhani', sans-serif",
+            letterSpacing:'2px', textTransform:'uppercase',
+            cursor:'pointer', transition:'all 0.25s',
+            boxShadow:'0 4px 20px #f7258533',
+          }}
+        >
+          {testing ? '⚡ Connecting...' : '⚡ Launch AKIRA'}
+        </button>
+
+        {/* Privacy note */}
+        <p style={{ textAlign:'center', color:'#ffffff22', fontSize:11, marginTop:16, letterSpacing:'0.5px', lineHeight:1.5 }}>
+          🔒 Your key is stored in session memory only.<br/>It is cleared when you close the tab.
+        </p>
+      </div>
+
+      {/* Footer */}
+      <p style={{ color:'#ffffff15', fontSize:11, marginTop:20, letterSpacing:'1px', textAlign:'center', position:'relative', zIndex:1 }}>
+        AKIRA ANIME CHATBOT • POWERED BY CLAUDE
+      </p>
+    </div>
+  )
+}
